@@ -1,0 +1,283 @@
+#https://www.kaggle.com/datasets/jockeroika/life-style-data
+
+
+#import library
+
+
+import numpy as np
+
+
+import pandas as pd
+
+
+import seaborn as sns
+
+
+import matplotlib.pyplot as plt
+
+
+df = pd.read_csv("Final_data.csv")
+
+
+# see data thats been imported
+
+
+df.head(10)
+
+
+df.shape
+
+
+df.dtypes
+
+
+#clean up data 
+
+
+df.isnull().sum()
+
+
+
+df.describe()
+
+
+
+# filter for only females
+
+
+df = df[df['Gender'] == 'Female'].copy()
+
+
+df['Gender'].value_counts()
+
+
+df.head(10)
+
+
+# drop empty columns
+
+
+df.dropna(axis=1, how="all", inplace=True)
+
+
+#fill numeric missing values with column means
+
+
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+df[numeric_cols] = df[numeric_cols].apply(lambda x: x.fillna(x.mean()))
+
+
+#clean up column names
+
+
+df.columns = (
+    df.columns
+    .str.strip()
+    .str.replace(" ", "_")
+    .str.replace("(", "", regex=False)
+    .str.replace(")", "", regex=False)
+)
+
+
+#remove extremele outliers
+
+
+df = df.query("10 <= Age <= 90 & 1 <= Height_m <= 2.2 & 30 <= Weight_kg <= 200 & 30 <= Max_BPM <= 220")
+
+
+#remove any duplicates
+
+
+df.drop_duplicates(inplace=True)
+
+
+#subset only cardio workouts
+
+
+df["Workout_Type"] = df["Workout_Type"].astype(str).str.strip().str.lower()
+
+
+df_cardio = df[df["Workout_Type"] == "cardio"].copy()
+
+
+df_cardio.head()
+
+
+#remove workout row completely
+
+
+df_cardio = df_cardio.drop(columns=["Workout_Type"])
+
+
+df_cardio.head()
+
+
+#make sure numeric columns are numeric
+
+
+numeric_cols = df.select_dtypes(include="number").columns
+df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+
+
+df_cardio.to_csv("Cleaned_Cardio_Data_Female.csv", index=False)
+
+
+#data analyst section 
+
+
+#scattergraph of calories bruned compared to session duration
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=df, x="Session_Duration_hours", y="Calories_Burned", hue="Avg_BPM", palette="RdPu", alpha=0.8, s=70)
+plt.title("Calories Burned vs Session Duration For Females (Colored by Avg BPM)", fontsize=13)
+plt.xlabel("Session Duration (hours)")
+plt.ylabel("Calories Burned")
+plt.legend(title="Average BPM")
+plt.tight_layout()
+plt.show()
+
+
+#scatterplot of calories burned and heart rate
+plt.figure(figsize=(8,6))
+sns.scatterplot( data=df, x="Avg_BPM", y="Calories_Burned", hue="Session_Duration_hours", palette="RdPu", alpha=0.8, s=70)
+plt.title("Calories Burned vs Average Heart Rate (Colored by Duration)", fontsize=13)
+plt.xlabel("Average Heart Rate (BPM)")
+plt.ylabel("Calories Burned")
+plt.legend(title="Session Duration (hrs)")
+plt.tight_layout()
+plt.show()
+
+
+#displot
+sns.displot(df[df["Avg_BPM"] > 140]["Calories_Burned"],
+    bins=25, kde=True, color="crimson")
+plt.title("Distribution of Calories Burned for High-Intensity Cardio (Avg BPM > 140) For Females")
+plt.xlabel("Calories Burned")
+plt.ylabel("Frequency")
+plt.show()
+
+
+#pairplot
+
+
+# select numeric columns relevant for cardio performance
+cols = ["Calories_Burned", "Avg_BPM", "Session_Duration_hours", "Weight_kg", "Resting_BPM"]
+df_pair = df[cols].dropna()
+scarlet_palette = sns.color_palette(["#ff2400", "#ff6347", "#ff7f50", "#ff4500"])
+
+# plot
+sns.set_style("whitegrid")
+sns.pairplot( df_pair, diag_kind="kde", corner=True, plot_kws={'alpha': 0.6, 's': 40, 'edgecolor': 'none', 'color': '#d72638'},  diag_kws={'color': '#d72638'},)
+plt.suptitle("Pairwise Relationships Among Core Cardio Metrics", y=1.02, fontsize=15)
+plt.show()
+
+
+#violinplot
+
+
+df["Intensity_Zone"] = pd.cut( df["Avg_BPM"], bins=[0, 120, 140, 160, 180], labels=["Low", "Moderate", "Elevated", "High"])
+
+# Plot
+plt.figure(figsize=(8,6))
+sns.violinplot(
+    data=df,
+    x="Intensity_Zone",
+    y="Calories_Burned",
+    hue="Intensity_Zone",
+    palette="mako",
+    legend=False,
+    inner="quartile")
+
+plt.title("Calories Burned Distribution Across Intensity Zones")
+plt.xlabel("Heart Rate Zone")
+plt.ylabel("Calories Burned")
+plt.tight_layout()
+plt.show()
+
+
+#pairwise
+
+
+# Select numeric columns relevant for cardio performance
+cols = ["Calories_Burned", "Avg_BPM", "Session_Duration_hours", "Weight_kg", "Resting_BPM"]
+df_pair = df[cols].dropna()
+scarlet_palette = sns.color_palette(["#ff2400", "#ff6347", "#ff7f50", "#ff4500"]) 
+
+# Plot pairwise relationships
+sns.set_style("whitegrid")
+sns.pairplot( df_pair, diag_kind="kde", corner=True, plot_kws={'alpha': 0.6, 's': 40, 'edgecolor': 'none', 'color': '#d72638'}, diag_kws={'color': '#d72638'},)
+plt.suptitle("Pairwise Relationships Among Core Cardio Metrics", y=1.02, fontsize=15)
+plt.show()
+
+
+#regression model predicting calorie burn based on BPM, weight and workout duration
+
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_error
+
+#predictors
+X = df[["Session_Duration_hours", "Avg_BPM", "Weight_kg", "Intensity_Index"]]
+y = df["Calories_Burned"]
+
+# train
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# fit the model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# evaluate
+y_pred = model.predict(X_test)
+print(f"R² = {r2_score(y_test, y_pred):.3f}")
+print(f"MAE = {mean_absolute_error(y_test, y_pred):.2f} calories")
+
+
+#top calorie-burning ages: age summary
+
+
+age_summary = (df.groupby("Age")["Calories_Burned"] .agg(['mean', 'count']) .query("count >= 10") .sort_values("mean", ascending=False))
+
+
+print(age_summary.head(10))
+
+
+#average calories burned changes across ages:
+
+
+plt.figure(figsize=(10,6))
+sns.barplot(data=age_summary.reset_index(), x="Age", y="mean", hue="Age", dodge=False, palette="Reds_r", legend=False)
+plt.title("Average Calories Burned by Age (≥10 Sessions)", fontsize=15)
+plt.xlabel("Age")
+plt.ylabel("Average Calories Burned")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+#barplot
+
+
+# Create age bins
+age_bins = [10, 20, 30, 40, 50, 60, 70]
+age_labels = ["10-19", "20-29", "30-39", "40-49", "50-59", "60-69"]
+
+df["Age_Group"] = pd.cut(df["Age"], bins=age_bins, labels=age_labels, right=False)
+avg_calories_by_age = (
+    df.groupby("Age_Group", observed=True)["Calories_Burned"]
+    .agg(["mean", "count"])
+    .reset_index()
+    .rename(columns={"mean": "Avg_Calories_Burned", "count": "Session_Count"}))
+
+#filter for groups with at least 10 sessions
+avg_calories_by_age = avg_calories_by_age[avg_calories_by_age["Session_Count"] >= 10]
+avg_calories_by_age = avg_calories_by_age.sort_values("Avg_Calories_Burned", ascending=True)
+
+plt.figure(figsize=(8,5))
+sns.barplot(data=avg_calories_by_age, x="Avg_Calories_Burned", y="Age_Group", hue="Age_Group", palette="viridis", legend=False)
+
+plt.title("Average Calories Burned by Age Group (≥10 Sessions)", fontsize=13)
+plt.xlabel("Average Calories Burned")
+plt.ylabel("Age Group")
+plt.tight_layout()
+plt.show()
